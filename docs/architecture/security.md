@@ -47,7 +47,7 @@ Default expiry: 90 days with advance reminder; operator can choose a shorter per
 
 Rotation creates a new independent key linked to the old key, deploys the new secret out of band in a later approved rollout, verifies last-use telemetry, and revokes the old key after a maximum 24-hour overlap. Limit active overlap to two keys per deployment group. Emergency revoke takes effect immediately: ingestion reads current key state from MongoDB for every batch; no long-lived positive auth cache. Requests already admitted cannot be retroactively uncommitted; incident response may flag/quarantine the affected key's accepted data. Retain only key ID for provenance, never its secret.
 
-On MongoDB auth lookup failure, return 503 without accepting a batch. Redis quota failure does not permit unrestricted traffic: use conservative bounded single-API-process fallback limits plus the durable MongoDB quotas, or reject if safe fallback is unavailable. This initial fallback assumes one API replica; multiple API replicas require a shared admission policy before scaling.
+On MongoDB auth lookup failure, return 503 without accepting a batch. Redis failure does not permit unrestricted traffic: Step 2 uses bounded single-API-process local rate limits plus durable MongoDB quota transactions in normal operation and outages. Reject intake if these guards are unavailable. This initial fallback assumes one API replica; multiple API replicas require a shared admission policy before scaling.
 
 ## Health-check SSRF controls
 

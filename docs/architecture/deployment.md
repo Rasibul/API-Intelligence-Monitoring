@@ -26,7 +26,7 @@ Oracle free capacity, limits and reclamation conditions must be verified in the 
 | Self-managed single-node replica set, initially on VM or separate host | Low cost; compatible transactional topology for pilot | No failover; co-location competes for RAM/disk and loses every component together |
 | Managed MongoDB replica set | Managed operations/backups depending on plan, independent VM failure domain | External data processing, quota/network cost; not strictly fully self-hosted; requires explicit acceptance of that trade-off |
 
-Recommend a self-managed replica set separate from the API VM if strict self-hosting is required and resources allow. A budget pilot may use a single-node replica set with a clearly accepted availability risk and off-host backups; that is not a high-availability production recommendation. Do not select a managed free tier merely because traffic is unknown. Evaluate current storage, connection, transaction, backup, network and suspension limits against measured load. No specific provider/plan is selected in Step 1.
+Recommend a self-managed replica set separate from the API VM if strict self-hosting is required and resources allow. A budget pilot may use a single-node replica set with a clearly accepted availability risk and off-host backups; that is not a high-availability production recommendation. Do not select a managed free tier merely because traffic is unknown. Evaluate current storage, connection, transaction, backup, network and suspension limits against measured load. No specific provider/plan is selected in Step 2.
 
 Budget RAM before choosing co-location: operating system/proxy, API heap/native memory, worker heap, scheduler, Redis dataset plus AOF rewrite/fork headroom, and MongoDB cache/index/transaction memory. Set independent process/connection-pool limits; Mongoose pools multiply across processes. A small VM can be incapable of this topology even when low average CPU looks acceptable. Start with low concurrency and profile actual resident memory.
 
@@ -49,7 +49,7 @@ Budget RAM before choosing co-location: operating system/proxy, API heap/native 
 
 MongoDB buffering should be disabled or strictly bounded for runtime models; use server-selection, socket and operation deadlines appropriate to the endpoint budget. HTTP server deadlines must exceed the short bounded durable commit path but must not allow stalled transactions to occupy every connection. Producer Redis clients fail promptly with offline queues disabled/bounded; worker connections reconnect according to BullMQ requirements. Never use infinite API retries.
 
-An accepted MongoDB receipt is recoverable while its durable data survives and remains within the 24-hour pending policy. With Redis AOF every-second persistence, recent queue mutations can be lost on crash; MongoDB reconciliation covers references, not lost MongoDB data. A journaled majority commit means durability only for the actual replica topology: a single-node replica set has no protection against disk/host loss. Never promise zero telemetry loss.
+An accepted MongoDB receipt is recoverable while its durable data survives and remains within the 24-hour pending policy. With Redis AOF every-second persistence, recent queue mutations can be lost on crash; Recreated wake jobs rediscover MongoDB work, but cannot recover lost MongoDB data. A journaled majority commit means durability only for the actual replica topology: a single-node replica set has no protection against disk/host loss. Never promise zero telemetry loss.
 
 ## Operations and self-observability
 
@@ -73,7 +73,7 @@ Let total fleet mean traffic be R requests/second, metric sample probability s, 
 - Approximate request payload bytes/day = `86,400 × R × s × b`; add error detail `86,400 × R × e × errorDetailSampling × x`, heartbeats and envelope overhead separately.
 - Batch jobs/day is between payload bytes / byte batch cap and events / event batch cap, plus timer-triggered partial batches per process. Do not assume batches are always full.
 - Raw disk ≈ measured `(BSON bytes + index bytes per event) × retained event count`, plus error collections, receipts, aggregates, oplog/journal and free-space margin.
-- Minute windows/day ≈ `1,440 × active(project/environment/scope combinations)`. Multiply by measured histogram record size and 30-day retention; sparse creation and coarser retention matter.
+- Minute windows/day ≈ `1,440 × active(project/environment/scope combinations)`. Multiply by measured histogram record size and 7-day minute retention; sparse creation and coarser retention matter.
 - Pending backlog growth ≈ `max(0, arrival rate − processing rate) × elapsed seconds`; count and byte caps still take precedence.
 - Drain time after outage ≈ `backlog events / (sustained processing rate − live arrival rate)`; if the denominator is ≤0, recovery cannot catch up.
 
@@ -86,7 +86,7 @@ Illustrative fleet-wide volumes at s=1 and b=600 bytes, decimal GB, excluding al
 | 100 | 8,640,000 | 5.184 | 36.288 |
 | 1,000 | 86,400,000 | 51.840 | 362.880 |
 
-At 100 RPS and 600 bytes/event, a 128 MiB inbox holds roughly 37 minutes of payload before overhead, not 24 hours. At 1,000 RPS it holds roughly 3.7 minutes. The 24-hour policy is a maximum age, not a storage guarantee. Redis reference queues and raw histograms add further cost. Real BSON/index footprint must be measured; do not present an assumed compression ratio as a guarantee.
+At 100 RPS and 600 bytes/event, a 128 MiB inbox holds roughly 37 minutes of payload before overhead, not 24 hours. At 1,000 RPS it holds roughly 3.7 minutes. The 24-hour policy is a maximum age, not a storage guarantee. Fixed Redis wake queues and raw histograms add further cost. Real BSON/index footprint must be measured; do not present an assumed compression ratio as a guarantee.
 
 Require sustained measured worker throughput above observed peak admitted traffic, preferably at least 2× for recovery, without breaking CPU/memory/DB budgets. Test burst admission and maximum-size events, not only averages. If the VM cannot meet budget, reduce retention/detail, use explicitly labeled uniform sampling, move MongoDB/CPU-heavy workers, or buy a larger VPS. Maintain data quality visibility whenever collection changes.
 

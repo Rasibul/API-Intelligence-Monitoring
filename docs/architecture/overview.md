@@ -1,6 +1,6 @@
 # Private API Intelligence & Monitoring Platform
 
-Status: Phase 1 — Step 1 architecture proposal, 2026-11-20. Documentation only; no implementation or deployment is authorized by this document.
+Status: Phase 1 - Step 2 refined architecture, 2026-11-21. Documentation only; no implementation or deployment is authorized by this document.
 
 ## Scope and assumptions
 
@@ -56,13 +56,13 @@ Backend stack remains Node.js + TypeScript + Express, Mongoose, Zod, JWT + bcryp
 2. Treat delivery as at least once within bounded retry windows. MongoDB uniqueness and idempotent services prevent duplicate counts. No end-to-end exactly-once claim.
 3. Preserve production availability ahead of telemetry completeness. SDK overflow or prolonged outages cause counted drops. Monitoring adds bounded CPU/memory overhead; it cannot promise literally zero overhead.
 4. Keep independent active probes alongside passive SDK telemetry. Missing traffic is not evidence that an application is down; a failed monitor is not evidence that the target is down.
-5. Store short-lived raw events and mergeable latency histograms for longer history. Offer bounded exact queries against retained raw data; label histogram percentiles approximate. Never average percentiles.
+5. Store short-lived raw events and mergeable latency histograms for longer history. Defer bounded exact queries against retained raw data; label histogram percentiles approximate. Never average percentiles.
 6. Emit UI invalidations after durable writes. REST is authoritative; Socket.IO and Redis pub/sub may lose events.
 7. Acknowledge the initial Docker-compatible VM as a single failure domain. Separate processes improve isolation, not high availability. Free-tier availability is not a deployment guarantee.
 
 ## Documentation map
 
-- [Implementation contracts](implementation-contracts.md): normative field, HTTP, queue, state-machine and acceptance contracts; exact Phase 2 ? Step 1 boundary.
+- [Implementation contracts](implementation-contracts.md): normative field, HTTP, queue, state-machine and acceptance contracts; exact Phase 2 - Step 1 boundary.
 - [Data flow](data-flow.md): SDK, ingestion, queue processing, probes, alerts and sockets.
 - [Backend modules](backend-modules.md): feature ownership and dependency rules.
 - [Database design](database-design.md): collections, indexes, retention and statistical definitions.
