@@ -1,11 +1,14 @@
 import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { ConfigurationError, loadEnvironment } from './config/env.js';
-import { log } from './utils/logger.js';
+import { classifyError, log } from './utils/logger.js';
 
 async function main(): Promise<void> {
   const config = loadEnvironment();
-  const server = createServer({ maxHeaderSize: 16 * 1024 }, createApp(config));
+  const server = createServer(
+    { maxHeaderSize: 16 * 1024, connectionsCheckingInterval: 1_000 },
+    createApp(config),
+  );
   server.headersTimeout = 5_000;
   server.requestTimeout = 10_000;
   server.keepAliveTimeout = 5_000;
@@ -43,18 +46,18 @@ async function main(): Promise<void> {
       resolve();
     });
   });
-  server.on('error', () => {
-    log('error', 'fatal_process_error');
+  server.on('error', (error: Error) => {
+    log('error', 'fatal_process_error', { errorKind: classifyError(error) });
     shutdown(1);
   });
   process.on('SIGINT', () => shutdown(0));
   process.on('SIGTERM', () => shutdown(0));
-  process.on('uncaughtException', () => {
-    log('error', 'fatal_process_error');
+  process.on('uncaughtException', (error: Error) => {
+    log('error', 'fatal_process_error', { errorKind: classifyError(error) });
     shutdown(1);
   });
-  process.on('unhandledRejection', () => {
-    log('error', 'fatal_process_error');
+  process.on('unhandledRejection', (error: unknown) => {
+    log('error', 'fatal_process_error', { errorKind: classifyError(error) });
     shutdown(1);
   });
   log('info', 'server_started', { port: config.PORT });
@@ -63,6 +66,6 @@ async function main(): Promise<void> {
 main().catch((error: unknown) => {
   if (error instanceof ConfigurationError) console.error(error.message);
   // Only our sanitized field-name diagnostic is printable, never raw exceptions.
-  log('error', 'startup_failed');
+  log('error', 'startup_failed', { errorKind: classifyError(error) });
   process.exitCode = 1;
 });

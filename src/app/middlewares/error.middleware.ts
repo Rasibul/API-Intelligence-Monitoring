@@ -1,6 +1,6 @@
 import type { ErrorRequestHandler } from 'express';
 import { AppError } from '../utils/AppError.js';
-import { log } from '../utils/logger.js';
+import { classifyError, log } from '../utils/logger.js';
 
 function normalizeError(error: unknown): AppError {
   if (error instanceof AppError) return error;
@@ -30,14 +30,22 @@ export const errorHandler: ErrorRequestHandler = (
   error: unknown,
   _request,
   response,
-  next,
+  // Express requires four parameters to recognize error middleware.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _next,
 ) => {
   const safe = normalizeError(error);
   const requestId = response.locals.requestId as string;
-  if (safe.statusCode >= 500)
-    log('error', 'request_failed', { requestId, statusCode: safe.statusCode });
+  if (safe.statusCode >= 500 || response.headersSent)
+    log('error', 'request_failed', {
+      requestId,
+      statusCode: safe.statusCode,
+      errorKind: classifyError(error),
+    });
   if (response.headersSent) {
-    next(error);
+    // A second response is impossible. Close without passing raw errors to
+    // Express's default handler, which would print their contents to stderr.
+    response.destroy();
     return;
   }
   response.setHeader('Cache-Control', 'no-store');

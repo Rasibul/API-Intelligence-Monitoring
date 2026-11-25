@@ -26,6 +26,7 @@ test('invalid configuration prevents server startup and never echoes values', as
   assert.match(output, /Invalid environment configuration: PORT/);
   assert.ok(!output.includes('seeded-secret'));
   assert.ok(!output.includes('server_started'));
+  assert.match(output, /"errorKind":"configuration"/);
 });
 
 test(
@@ -57,6 +58,7 @@ test(
       const [code] = await once(child, 'exit');
       assert.equal(code, 1);
       assert.match(output, /startup_failed/);
+      assert.match(output, /"errorKind":"address_in_use"/);
       assert.ok(!output.includes('stack'));
     } finally {
       await new Promise<void>((resolve) => occupied.close(() => resolve()));

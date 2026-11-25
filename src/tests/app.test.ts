@@ -149,4 +149,32 @@ test('async failures reach central middleware; internal details never reach clie
   assert.equal(output.length, 1);
   assert.ok(!output.join('').includes('seeded-secret'));
   assert.equal(JSON.parse(output[0]!).event, 'request_failed');
+  assert.equal(JSON.parse(output[0]!).errorKind, 'unknown');
+});
+
+test('late response errors close the connection without leaking through the default logger', async (context) => {
+  const output: unknown[] = [];
+  context.mock.method(console, 'error', (value: unknown) => output.push(value));
+  const app = express();
+  app.set('env', 'production');
+  app.get('/partial', (_request, response, next) => {
+    response.locals.requestId = 'late-error-request';
+    response.write('partial');
+    next(new TypeError('password=seeded-late-secret'));
+  });
+  app.use(errorHandler);
+  await withServer(app, async (origin) => {
+    await assert.rejects(async () => {
+      const response = await fetch(`${origin}/partial`);
+      await response.text();
+    });
+    // Express's default logger runs on setImmediate; allow it to run if invoked.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  });
+  assert.equal(output.length, 1);
+  assert.equal(typeof output[0], 'string');
+  const entry = JSON.parse(output[0] as string);
+  assert.equal(entry.errorKind, 'type_error');
+  assert.equal(entry.requestId, 'late-error-request');
+  assert.ok(!String(output[0]).includes('seeded-late-secret'));
 });
