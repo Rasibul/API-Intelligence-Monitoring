@@ -1,12 +1,16 @@
 # API Intelligence & Monitoring — Backend
 
-Private backend for monitoring existing Node.js applications through future metadata-only telemetry and independent active checks. This delivery implements the HTTP foundation only: no database, queue, authentication, SDK, external probes, analytics or notification integrations.
+Private backend for monitoring existing Node.js applications through future metadata-only telemetry and independent active checks. It currently implements the HTTP foundation and the MongoDB and Redis connection lifecycles. There are no domain models, queues, authentication, SDK, external probes, analytics or notifications yet.
 
 This existing Git repository is exclusively the backend. All application files belong directly in its root; do not add a nested `backend/` directory or initialize another Git repository. The React/JavaScript/Vite frontend will have an independent GitHub repository, dependencies, environment configuration and deployment. Both repositories may sit beside each other in a local parent workspace with shared AI instructions. They will communicate through `/api/v1` REST APIs and versioned Socket.IO events; REST remains authoritative. SDK packaging and source location remain undecided.
 
 ## Requirements and setup
 
-Use a supported Node.js LTS line matching `package.json` engines and npm. Verified locally with Node.js **22.23.2** and npm **10.9.2**. Runtime dependencies are Express 5 and Zod 4. Development uses strict TypeScript, ESLint 10, Prettier, tsx and Node's built-in test runner. Exact dependency versions and the dependency tree are recorded in package.json/package-lock.json.
+Use a supported Node.js LTS line matching `package.json` engines and npm. Verified locally with Node.js **22.23.2** and npm **10.9.2**. Runtime dependencies are Express 5, Zod 4, Mongoose 9 and ioredis 6. Starting the server requires a reachable MongoDB and Redis.
+
+**The project uses a Docker-free development and deployment strategy.** Node.js runs directly on your computer; MongoDB Atlas provides the development database and Redis Cloud the development Redis. No containers or local database servers are required. Put their URLs in `.env`, and add your public IP to the Atlas Network Access list. See [docs/infrastructure.md](docs/infrastructure.md#docker-free-environment) for setup pitfalls.
+
+Development uses strict TypeScript, ESLint 10, Prettier, tsx and Node's built-in test runner. Exact dependency versions and the dependency tree are recorded in package.json/package-lock.json.
 
 From this repository root:
 
@@ -20,30 +24,42 @@ PowerShell equivalent for the copy is `Copy-Item .env.example .env`. If PowerShe
 
 ## Environment configuration
 
-```dotenv
-NODE_ENV=development
-PORT=5000
-CORS_ORIGIN=http://localhost:5173
-```
+Server startup loads an optional root `.env` with Node's built-in `loadEnvFile`; existing process environment variables take precedence. Zod validates everything before any connection is opened. See `.env.example` for a template.
 
-Server startup loads an optional root `.env` with Node's built-in `loadEnvFile`; existing process environment variables take precedence. Zod validates all three settings before opening a listener. They are required even when `.env` is absent. NODE_ENV accepts development, test or production; PORT must be a whole decimal port from 1 through 65535; CORS_ORIGIN accepts a comma-separated list of exact HTTP(S) origins without paths, credentials or trailing slashes. Wildcards and `null` origins are rejected. Production should supply actual settings through the environment.
+| Variable                              | Required      | Default | Rule                                                                                            |
+| ------------------------------------- | ------------- | ------- | ----------------------------------------------------------------------------------------------- |
+| `NODE_ENV`                            | Yes           | —       | `development`, `test` or `production`                                                           |
+| `PORT`                                | Yes           | —       | Whole port, 1–65535                                                                             |
+| `CORS_ORIGIN`                         | Yes           | —       | Comma-separated exact HTTP(S) origins; no wildcard, `null`, path, credentials or trailing slash |
+| `MONGODB_URI`                         | Yes           | —       | `mongodb://` or `mongodb+srv://` with an explicit database name                                 |
+| `MONGODB_MAX_POOL_SIZE`               | No            | 10      | 1–100                                                                                           |
+| `MONGODB_CONNECT_TIMEOUT_MS`          | No            | 5000    | 500–10000                                                                                       |
+| `MONGODB_SERVER_SELECTION_TIMEOUT_MS` | No            | 5000    | 500–30000                                                                                       |
+| `REDIS_URL`                           | Yes           | —       | `redis://` or `rediss://`; optional database 0–99; no query or fragment                         |
+| `REDIS_CONNECT_TIMEOUT_MS`            | No            | 5000    | 500–30000                                                                                       |
+| `REDIS_RECONNECT_MAX_DELAY_MS`        | No            | 5000    | 100–60000                                                                                       |
+| `STARTUP_MAX_ATTEMPTS`                | No            | 3       | 1–10 connection attempts per dependency                                                         |
+| `WATCHDOG_TOKEN`                      | In production | —       | 32+ random URL-safe characters; blank disables `GET /ready`                                     |
 
-Invalid configuration exits with code 1 and reports only invalid field names, never supplied values. `.env` is ignored; only `.env.example` is intended for Git. No service credentials are needed or configured. Logs contain only fixed events and allowlisted IDs/status/port metadata; raw errors, request headers, bodies, URLs and environment objects are never logged.
+Production should supply actual settings through the environment.
+
+Invalid configuration exits with code 1 and reports only invalid field names, never supplied values. `.env` is ignored; only `.env.example` is intended for Git. Logs contain only fixed events and allowlisted IDs, status, port, dependency name, topology and attempt metadata; raw errors, request headers, bodies, URLs and environment objects are never logged.
 
 ## Commands
 
-| Command                | Purpose                                                      |
-| ---------------------- | ------------------------------------------------------------ |
-| `npm run dev`          | Start tsx watch mode with automatic restart                  |
-| `npm run build`        | Compile application TypeScript into dist, excluding tests    |
-| `npm start`            | Run compiled dist/app/server.js; build first                 |
-| `npm run typecheck`    | Check source and tests without emitting files                |
-| `npm run lint`         | Run ESLint                                                   |
-| `npm run format`       | Format code/config/README; architecture docs are excluded    |
-| `npm run format:check` | Verify formatting without edits                              |
-| `npm test`             | Run isolated HTTP, configuration and process lifecycle tests |
+| Command                    | Purpose                                                   |
+| -------------------------- | --------------------------------------------------------- |
+| `npm run dev`              | Start tsx watch mode with automatic restart               |
+| `npm run build`            | Compile application TypeScript into dist, excluding tests |
+| `npm start`                | Run compiled dist/app/server.js; build first              |
+| `npm run typecheck`        | Check source and tests without emitting files             |
+| `npm run lint`             | Run ESLint                                                |
+| `npm run format`           | Format code/config/README; architecture docs are excluded |
+| `npm run format:check`     | Verify formatting without edits                           |
+| `npm test`                 | Run the full suite; needs no external servers             |
+| `npm run test:integration` | Opt-in tests against real development services            |
 
-For compiled production execution, set NODE_ENV=production, run `npm run build`, then `npm start`. No deployment is configured by this step.
+For compiled production execution, set NODE_ENV=production, run `npm run build`, then `npm start`. No deployment is configured by this step; the future approach is independent Node.js processes under a supervisor such as systemd or PM2, described in [deployment.md](docs/architecture/deployment.md#docker-free-strategy).
 
 ## HTTP behavior
 
@@ -63,7 +79,24 @@ For compiled production execution, set NODE_ENV=production, run `npm run build`,
 curl http://localhost:5000/health
 ```
 
-`GET /live` retains the architecture's minimal `{ "status": "alive" }` response. Neither endpoint indicates dependency readiness. Unknown routes return 404:
+`GET /live` retains the architecture's minimal `{ "status": "alive" }` response. Neither endpoint indicates dependency readiness.
+
+`GET /ready` reports MongoDB and Redis availability. It requires `Authorization: Bearer <WATCHDOG_TOKEN>` and does not exist when no token is configured. It returns 200, or 503 with `Retry-After`:
+
+```json
+{
+  "data": {
+    "status": "not_ready",
+    "dependencies": { "mongodb": "available", "redis": "unavailable" }
+  },
+  "meta": {
+    "requestId": "server-generated-uuid",
+    "asOf": "2026-11-21T00:00:00.000Z"
+  }
+}
+```
+
+Unknown routes return 404:
 
 ```json
 {
@@ -80,21 +113,23 @@ Responses follow [implementation-contracts.md](docs/architecture/implementation-
 
 JSON parsing is limited to 256 KiB with decompression disabled. No form endpoints exist, so URL-encoded parsing is omitted. Exact Origin allowlists are enforced; originless server-to-server requests are supported. CORS currently permits GET/HEAD/OPTIONS and Content-Type; credentialed CORS and domain mutations are deferred to reviewed authentication work. CORS is not authentication. Express identifying headers/ETags and proxy trust are disabled, with basic response security headers. Reverse proxy/TLS policy remains future deployment work.
 
-HTTP startup limits headers to 16 KiB, header receipt to 5 seconds, request receipt to 10 seconds and inactive sockets to 15 seconds. SIGINT/SIGTERM stop accepting requests, close idle connections and drain for at most 10 seconds before forced closure and exit 1. Normal shutdown exits 0; startup failures and fatal process exceptions/rejections exit nonzero with sanitized logs. A supervisor is responsible for restarting a failed production process.
+HTTP startup limits headers to 16 KiB, header receipt to 5 seconds, request receipt to 10 seconds and inactive sockets to 15 seconds. SIGINT/SIGTERM stop accepting requests, close idle connections and drain for at most 10 seconds before forced closure and exit 1, then close Redis and MongoDB, within 16 seconds overall. Normal shutdown exits 0; an unclean one exits 1; startup failures and fatal process exceptions/rejections exit nonzero with sanitized logs. A supervisor is responsible for restarting a failed production process.
 
 ## Structure and architecture scope
 
 ```text
-docs/architecture/                # Eight existing authoritative documents, unchanged
+docs/architecture/                # Eight existing authoritative documents
+docs/infrastructure.md           # MongoDB and Redis behavior, outages and limits
 src/app/
-  config/env.ts
-  middlewares/                   # Error and not-found handlers
-  modules/health/                # Controller and router; no empty service/model
+  config/                        # Environment, MongoDB and Redis managers
+  middlewares/                   # Error, not-found and watchdog credential
+  modules/health/                # Health, liveness and readiness
   routes/index.ts
-  utils/                         # AppError and allowlisted structured logger
+  utils/                         # Errors, dependency lifecycle, allowlisted logger
   app.ts                         # Side-effect-free Express factory
-  server.ts                      # Environment loading and HTTP lifecycle
-src/tests/                       # HTTP, config and lifecycle tests
+  bootstrap.ts                   # Startup and shutdown lifecycle
+  server.ts                      # Process entry point
+src/tests/                       # Unit, protocol-level and process tests
 eslint.config.js
 tsconfig.json
 tsconfig.build.json
@@ -104,8 +139,6 @@ package-lock.json
 
 ESM (`type: module`) and NodeNext module resolution use explicit .js import paths that resolve to TypeScript during development and compiled JavaScript in production. ES2023 targets the tested LTS runtime. Strict mode, unchecked-index protection and exact optional-property checks apply to source and tests; builds exclude tests and emit only into ignored dist. No unnecessary empty interfaces, models, services or async wrappers are created.
 
-The current implementation request intentionally narrows the original [architecture foundation scope](docs/architecture/implementation-contracts.md#exact-phase-2--step-1-implementation-scope): MongoDB/Redis connection lifecycles, migrations, protected readiness, worker/scheduler entry points and heartbeats are deferred. The request's src/app layout replaces illustrative architecture paths for this step. Architecture documents remain unchanged and retain all approved security, durability, queue, monitoring and database decisions for later implementation.
+The [architecture foundation scope](docs/architecture/implementation-contracts.md#exact-phase-2--step-1-implementation-scope) also includes the migration runner, worker/scheduler entry points and heartbeats, which remain deferred. The src/app layout replaces illustrative architecture paths. Architecture documents are unchanged except for the Docker-free deployment revision. Connection behavior, its limits and how to run integration tests are described in [docs/infrastructure.md](docs/infrastructure.md).
 
-Tests cover health envelopes, liveness, unknown routes, exact CORS, parser bounds, async/operational errors, log sanitization, invalid settings, occupied ports and graceful signal handlers. On Windows, lifecycle tests invoke Node signal events through IPC because Windows child termination does not deliver POSIX signals. They exercise the actual server handlers; native OS signal delivery remains a host-level verification.
-
-Recommended Phase 2 — Step 2: bounded MongoDB replica-set and Redis connection infrastructure, explicit migration mechanism, process-specific validation, protected readiness and lifecycle/failure tests. Confirm that scope before implementation; domain features and production deployment remain later steps.
+Tests cover health envelopes, liveness, unknown routes, exact CORS, parser bounds, async/operational errors, log sanitization, invalid settings, occupied ports, graceful signal handlers, MongoDB/Redis connection lifecycles and readiness. The suite runs the real drivers against loopback protocol stand-ins; these verify client behavior, not MongoDB or Redis themselves. On Windows, lifecycle tests invoke Node signal events through IPC because Windows child termination does not deliver POSIX signals. They exercise the actual server handlers; native OS signal delivery remains a host-level verification.

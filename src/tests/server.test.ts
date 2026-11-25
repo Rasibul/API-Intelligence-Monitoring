@@ -3,14 +3,29 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { test } from 'node:test';
+import { after, test } from 'node:test';
+import { testToken, validEnv } from './support/env.js';
+import { startFakeMongo } from './support/fakeMongo.js';
+import { startFakeRedis } from './support/fakeRedis.js';
+
+// The real entry point and drivers run against loopback protocol stand-ins.
+const mongo = await startFakeMongo();
+const redis = await startFakeRedis('seeded-redis-pass');
+after(() => Promise.all([mongo.stop(), redis.stop()]));
+const environment = {
+  ...process.env,
+  ...validEnv,
+  MONGODB_URI: mongo.uri,
+  REDIS_URL: `redis://:seeded-redis-pass@127.0.0.1:${redis.port}`,
+  WATCHDOG_TOKEN: testToken,
+};
 
 test('invalid configuration prevents server startup and never echoes values', async () => {
   const child = spawn(
     process.execPath,
     ['--import', 'tsx', 'src/app/server.ts'],
     {
-      env: { ...process.env, PORT: 'seeded-secret-port' },
+      env: { ...environment, PORT: 'seeded-secret-port' },
       stdio: ['ignore', 'pipe', 'pipe'],
     },
   );
@@ -42,7 +57,7 @@ test(
         ['--import', 'tsx', 'src/app/server.ts'],
         {
           env: {
-            ...process.env,
+            ...environment,
             PORT: String((occupied.address() as AddressInfo).port),
           },
           stdio: ['ignore', 'pipe', 'pipe'],
@@ -82,7 +97,7 @@ for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         process.execPath,
         ['--import', 'tsx', '--input-type=module', '--eval', launcher],
         {
-          env: { ...process.env, PORT: String(port), NODE_ENV: 'test' },
+          env: { ...environment, PORT: String(port) },
           stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
         },
       );

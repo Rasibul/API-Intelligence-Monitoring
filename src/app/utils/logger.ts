@@ -1,5 +1,7 @@
 import { ConfigurationError } from '../config/env.js';
 import { AppError } from './AppError.js';
+import { DependencyError, dependencyErrorKinds } from './DependencyError.js';
+import type { DependencyName } from './DependencyError.js';
 
 const errorKinds = [
   'configuration',
@@ -8,6 +10,7 @@ const errorKinds = [
   'operational',
   'type_error',
   'syntax_error',
+  ...dependencyErrorKinds,
   'unknown',
 ] as const;
 type ErrorKind = (typeof errorKinds)[number];
@@ -15,6 +18,7 @@ type ErrorKind = (typeof errorKinds)[number];
 export function classifyError(error: unknown): ErrorKind {
   if (error instanceof ConfigurationError) return 'configuration';
   if (error instanceof AppError) return 'operational';
+  if (error instanceof DependencyError) return error.kind;
   if (error instanceof Error && 'code' in error) {
     if (error.code === 'EADDRINUSE') return 'address_in_use';
     if (error.code === 'EACCES' || error.code === 'EPERM')
@@ -30,9 +34,18 @@ type LogEvent =
   | 'startup_failed'
   | 'shutdown_started'
   | 'shutdown_complete'
+  | 'shutdown_failed'
   | 'shutdown_timeout'
+  | 'dependency_connected'
+  | 'dependency_unavailable'
+  | 'dependency_reconnecting'
+  | 'dependency_reconnected'
+  | 'dependency_closed'
+  | 'dependency_close_failed'
   | 'fatal_process_error'
   | 'request_failed';
+
+export type MongoTopology = 'standalone' | 'replica_set' | 'sharded';
 
 // Closed, allowlisted fields: never serialize requests, environment or Error objects.
 export function log(
@@ -43,6 +56,10 @@ export function log(
     port?: number;
     statusCode?: number;
     errorKind?: ErrorKind;
+    dependency?: DependencyName;
+    topology?: MongoTopology;
+    attempt?: number;
+    maxAttempts?: number;
   } = {},
 ): void {
   const record = JSON.stringify({
@@ -61,6 +78,14 @@ export function log(
     ...(fields.statusCode === undefined
       ? {}
       : { statusCode: fields.statusCode }),
+    ...(fields.dependency === undefined
+      ? {}
+      : { dependency: fields.dependency }),
+    ...(fields.topology === undefined ? {} : { topology: fields.topology }),
+    ...(fields.attempt === undefined ? {} : { attempt: fields.attempt }),
+    ...(fields.maxAttempts === undefined
+      ? {}
+      : { maxAttempts: fields.maxAttempts }),
   });
   if (level === 'error') console.error(record);
   else console.log(record);

@@ -1,17 +1,28 @@
 # Deployment, capacity and recovery
 
+## Docker-free strategy
+
+**The project uses a Docker-free development and deployment strategy.** No image, container, Compose file or local Docker infrastructure is part of any workflow.
+
+| Environment | Approach |
+| --- | --- |
+| Development | Node.js runs directly on the developer's computer through npm scripts; MongoDB Atlas provides the development database and Redis Cloud the development Redis. No local database servers are required |
+| Deployment (future) | The frontend deploys independently. API, worker and scheduler run directly on a VPS or compatible host as independent Node.js processes under a supervisor such as systemd or PM2. MongoDB and Redis may remain managed cloud services |
+
+Development credentials and databases are never reused for production. Choosing a supervisor, host and managed plans remains open; nothing is deployed or configured yet. Removing containers does not remove any isolation, limit, restart or recovery requirement below: the host and supervisor must provide them.
+
 ## Initial topology
 
-Vercel serves the React/Vite static application. The browser connects directly to the Docker-compatible VM API and Socket.IO TLS hostname; no monitoring workers or scheduler run on Vercel. Keep frontend JavaScript, public API origin and build metadata there; no database, JWT-signing, Resend or ingestion secrets in Vite environment output.
+Vercel serves the React/Vite static application. The browser connects directly to the VM API and Socket.IO TLS hostname; no monitoring workers or scheduler run on Vercel. Keep frontend JavaScript, public API origin and build metadata there; no database, JWT-signing, Resend or ingestion secrets in Vite environment output.
 
-One Docker-compatible VM initially hosts a TLS reverse proxy, API process, worker process, scheduler process and Redis. Use Docker Compose with separate API, worker and scheduler services, restart policies, memory/CPU limits and persistent volumes. The VM provider is unselected; Oracle is only a candidate. No Kubernetes. Run processes as non-root, expose only the proxy, and give each process its own health/freshness signal. A worker restart does not restart HTTP; a scheduler failure is visible even while `/live` succeeds.
+One VM initially hosts a TLS reverse proxy and the API, worker and scheduler processes, with Redis either managed or privately installed on the host. Run API, worker and scheduler as separately supervised Node.js services with restart policies and memory/CPU limits, and keep any self-hosted data on persistent disk. With systemd use a unit per process, a non-root `User=`, `Restart=` with backoff, and `MemoryMax=`/`CPUQuota=`. PM2's `max_memory_restart` is a restart threshold rather than a hard limit and PM2 provides no CPU limit, so if PM2 is chosen enforce hard limits at the operating-system level. The VM provider is unselected; Oracle is only a candidate. No Kubernetes. Run processes as non-root, expose only the proxy, and give each process its own health/freshness signal. A worker restart does not restart HTTP; a scheduler failure is visible even while `/live` succeeds.
 
 | Process | Startup dependencies | Operational behavior |
 | --- | --- | --- |
 | API | Valid config, MongoDB for durable/auth routes; Redis optional only with bounded fallback | Bounded HTTP intake; readiness reflects durable ingestion and admin capabilities separately |
 | Worker | MongoDB and Redis | Separate queue pools/concurrency; dependency circuits and bounded job shutdown |
 | Scheduler | MongoDB; Redis needed to dispatch | Create finite durable due work; reconcile when Redis returns; never run from route handlers |
-| Redis | Persistent storage and memory budget | AOF with every-second fsync initially, `noeviction`, authenticated private access, supervised restart |
+| Redis | Persistent storage and memory budget | AOF with every-second fsync initially, `noeviction`, authenticated private access (TLS when managed), supervised restart or managed equivalent. Verify these on the selected plan; free plans commonly default to eviction and no persistence |
 | External watchdog | Separate host/network/notification route | Monitor API reachability plus worker/scheduler/processing freshness, not just HTTP 200 |
 
 One API replica initially avoids distributed Socket.IO fan-out and fallback-rate-limit complexity. Workers publish invalidations over Redis pub/sub to that API. If later adding API replicas, introduce shared authorization/admission behavior, a suitable Socket.IO adapter, and sticky routing when long-polling is enabled. Treat this as measured scaling work, not initial scope.
@@ -57,6 +68,8 @@ Expose minimal unauthenticated liveness without versions, credentials or depende
 
 Record process heartbeat every 15 seconds; stale after 60 seconds. Report ingestion accepted/rejected/dropped counts, event/byte rate, queue health, durable backlog depth/age and quota utilization, terminal failures, transaction conflicts, processing watermark, dirty-window age, probe schedule lag, notification failures, heap/RSS/event-loop lag, disk and Mongo/Redis health. Restrict label cardinality. Use sanitized rotating local logs with finite disk quotas and externally observed platform metrics. Do not depend solely on this platform's own incident engine to alert on its failure.
 
+The supervisor's stop timeout must exceed the process shutdown deadline; otherwise it kills a process that is still draining. The current API deadline is 16 seconds: systemd's default `TimeoutStopSec` (90 seconds) is sufficient, PM2's default `kill_timeout` (1.6 seconds) is not.
+
 Shutdown order: stop accepting/claiming new work, drain short API requests and sockets, finish or abandon jobs within a finite grace (initially 30 seconds), commit or roll back active transactions, then close queue/Redis/Mongo connections. A timed-out drain leaves leases/jobs for recovery. Scheduler stops claims before exit. Supervisors restart with jitter/backoff to avoid hot crash loops.
 
 Deploy backward-compatible schema/contract changes first, then worker/scheduler, API and frontend, with SDK releases independently versioned. Support a documented previous telemetry schema during rollout. Apply indexes/migrations explicitly; no automatic destructive sync. Keep rollback artifacts and preserve unknown-version jobs safely rather than retrying poison payloads indefinitely. Verify `/live`, protected readiness, fresh worker/scheduler heartbeat, a synthetic ingestion receipt and a safe canary monitor after deployment.
@@ -94,6 +107,6 @@ Require sustained measured worker throughput above observed peak admitted traffi
 
 Prefer a managed replica-set deployment if its verified quotas, backup capability, privacy policy and budget fit the measured pilot; otherwise a self-managed single-node replica set is a budget pilot option with acknowledged host/disk loss and no failover. A managed free plan is not presumed to include backups, sufficient transactions/connections/storage or an availability commitment. For either option validate transaction support with an actual commit/rollback drill, restore an encrypted off-host backup and measure disk/index growth before production. MongoDB selection remains open; do not silently substitute standalone MongoDB.
 
-Bound total Mongo connection pools initially to 10/API, 10/worker and 5/scheduler; verify against the selected plan. Disk warning 70%, reject new intake at 85% of the allocated data budget or if remaining space cannot cover maintenance/journal headroom. Redis memory warning 70% and stop new dispatch at that threshold pending investigation. Docker memory/CPU numbers remain unassigned until actual VM RAM is known; their review is a deployment gate, not an implicit unlimited setting. Cap rotating logs to 100 MiB per process and queue event streams to 1,000 entries per queue (verify trimming on the selected BullMQ version).
+Bound total Mongo connection pools initially to 10/API, 10/worker and 5/scheduler; verify against the selected plan. Disk warning 70%, reject new intake at 85% of the allocated data budget or if remaining space cannot cover maintenance/journal headroom. Redis memory warning 70% and stop new dispatch at that threshold pending investigation. Per-process supervisor memory/CPU limits remain unassigned until actual VM RAM is known; their review is a deployment gate, not an implicit unlimited setting. Cap rotating logs to 100 MiB per process and queue event streams to 1,000 entries per queue (verify trimming on the selected BullMQ version).
 
 Daily encrypted off-host logical backups require a consistent replica-set-aware snapshot/oplog procedure; a naive live multi-collection dump is insufficient for cross-collection correctness. Retain seven successful daily backups, alert on age >26 hours, test monthly restore and after migration. Record included collections, encryption-key custody and restore duration. Backups must include durable inbox/outbox and configuration; telemetry can be excluded only with an explicit recovery gap. Resend requires a verified sender and verified account limits; queue attempts obey rate caps and cannot guarantee delivery. Vercel serves static assets only; no scheduled probes/workers there. No free provider is assumed always on; keep a paid/fallback VM and backup budget decision open.

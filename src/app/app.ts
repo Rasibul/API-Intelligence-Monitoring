@@ -3,10 +3,14 @@ import express from 'express';
 import type { Environment } from './config/env.js';
 import { errorHandler } from './middlewares/error.middleware.js';
 import { notFound } from './middlewares/notFound.middleware.js';
-import { routes } from './routes/index.js';
+import type { ReadinessAccess } from './modules/health/health.route.js';
+import { createRoutes } from './routes/index.js';
 import { AppError } from './utils/AppError.js';
 
-export function createApp(config: Environment) {
+export function createApp(
+  config: Pick<Environment, 'CORS_ORIGIN'>,
+  access?: ReadinessAccess,
+) {
   const app = express();
   app.disable('x-powered-by');
   app.disable('etag');
@@ -44,7 +48,7 @@ export function createApp(config: Environment) {
   });
   app.use(express.json({ limit: '256kb', strict: true, inflate: false }));
   // No form endpoints exist yet, so URL-encoded parsing is intentionally absent.
-  app.use(routes);
+  app.use(createRoutes(access));
   app.use(notFound);
   app.use(errorHandler);
   return app;

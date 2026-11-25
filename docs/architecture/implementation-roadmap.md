@@ -43,7 +43,8 @@ Each phase can deliver a small vertical UI slice once its API is stable; do not 
 | Admin JWT + revocable DB sessions | Short-lived tokens plus immediate revocation | Session reads require MongoDB; custom same-site domains needed for proposed refresh cookie |
 | API key digest + scoped authorization | Limit write credentials to one project/environment | Compromised senders can still falsify scoped telemetry; quota/audit/IP defense needed |
 | REST source of truth + socket invalidations | Simple reconnect and dropped-message recovery | Slight refetch overhead and eventual UI freshness |
-| Docker-compatible VM; provider open | Fits initial internal deployment intent | Capacity/free-tier stability and off-host recovery remain unresolved |
+| Docker-free: independently supervised Node.js processes on a VM; provider open | Simple operation for a small internal platform; no container tooling to run or secure | Host and supervisor must supply isolation, resource limits and restarts; capacity/free-tier stability and off-host recovery remain unresolved |
+| Managed development services (MongoDB Atlas, Redis Cloud) | Real replica set and Redis without local infrastructure | Needs network access, an Atlas IP access list and TLS; not a production plan selection |
 
 ## Unresolved risks and decisions
 

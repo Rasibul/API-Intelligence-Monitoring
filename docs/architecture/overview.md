@@ -58,7 +58,8 @@ Backend stack remains Node.js + TypeScript + Express, Mongoose, Zod, JWT + bcryp
 4. Keep independent active probes alongside passive SDK telemetry. Missing traffic is not evidence that an application is down; a failed monitor is not evidence that the target is down.
 5. Store short-lived raw events and mergeable latency histograms for longer history. Defer bounded exact queries against retained raw data; label histogram percentiles approximate. Never average percentiles.
 6. Emit UI invalidations after durable writes. REST is authoritative; Socket.IO and Redis pub/sub may lose events.
-7. Acknowledge the initial Docker-compatible VM as a single failure domain. Separate processes improve isolation, not high availability. Free-tier availability is not a deployment guarantee.
+7. Acknowledge the initial VM as a single failure domain. Separate processes improve isolation, not high availability. Free-tier availability is not a deployment guarantee.
+8. Develop and deploy without Docker. Development runs Node.js locally against MongoDB Atlas and Redis Cloud; deployment runs independently supervised Node.js processes. See [deployment](deployment.md#docker-free-strategy).
 
 ## Documentation map
 

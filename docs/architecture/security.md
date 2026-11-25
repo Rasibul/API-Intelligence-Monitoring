@@ -16,7 +16,7 @@ Sanitize in the SDK before serialization and again at ingestion before persisten
 | SDK → ingestion | Fixed TLS hostname with certificate verification; optional known VPS IP allowlist as a second control, never key replacement |
 | Admin browser → API/socket | Prefer VPN/IP restriction for internal use; authenticated origin/session enforced regardless |
 | Operator → SSH | Key authentication, narrow source allowlist/VPN, no password/root login |
-| API/worker/scheduler → Redis | Loopback/private bridge, authenticated ACLs, never public 6379 |
+| API/worker/scheduler → Redis | Self-hosted: loopback/private network, authenticated ACLs, never public 6379. Managed: TLS with certificate verification, authenticated ACLs and source allowlist; plaintext `redis://` over the internet is not acceptable for production |
 | Processes → MongoDB | Private network where possible; TLS and least privilege, explicit source allowlist, never open 27017 to the world |
 | Probe worker → targets | Approved public HTTPS destinations/ports only; metadata/private networks blocked at egress |
 | Notifications → Resend | TLS API with server-only sending credential |
