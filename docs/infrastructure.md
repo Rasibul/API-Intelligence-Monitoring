@@ -99,8 +99,8 @@ Known driver limitation: if MongoDB disappears at the instant of shutdown, the d
 
 ```sh
 export INTEGRATION_MONGODB_URI='<development Atlas URI with a database name>'
-export INTEGRATION_REDIS_URL='<development Redis Cloud URL>'
+export INTEGRATION_REDIS_URL='<development Redis Cloud rediss:// URL>'
 npm run test:integration
 ```
 
-In PowerShell set the variables with `$env:NAME = '...'`. A test whose variable is unset is skipped. Never point it at production.
+In PowerShell set the variables with `$env:NAME = '...'`. A test whose variable is unset is skipped. The Redis test is also skipped for a plaintext `redis://` URL to a non-loopback host, so credentials are never sent unencrypted. Never point it at production.

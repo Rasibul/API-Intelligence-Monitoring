@@ -9,12 +9,9 @@ import { createApp } from '../app/app.js';
 import { parseEnv } from '../app/config/env.js';
 import { errorHandler } from '../app/middlewares/error.middleware.js';
 import { AppError } from '../app/utils/AppError.js';
+import { validEnv } from './support/env.js';
 
-const config = parseEnv({
-  NODE_ENV: 'test',
-  PORT: '5000',
-  CORS_ORIGIN: 'http://localhost:5173',
-});
+const config = parseEnv({ ...validEnv });
 
 async function withServer(
   app: Express,
